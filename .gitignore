@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Hasil build PyInstaller (exe diupload lewat GitHub Releases, bukan di-commit)
+build/
+dist/
+*.spec
+*.exe
+
+# File riwayat undo milik aplikasi
+.rapihin_undo.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Hasil compile installer
+installer_output/
