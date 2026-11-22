@@ -2,8 +2,8 @@
 echo Menginstall dependensi...
 pip install -r requirements.txt pyinstaller
 echo.
-echo Membuat rapihin.exe...
-pyinstaller --onefile --windowed --name rapihin --icon rapihin.ico --add-data "rapihin.ico;." --collect-all customtkinter --collect-all tkinterdnd2 rapihin.py
+echo Membuat rapihin.exe portable...
+pyinstaller --noconfirm --clean --onefile --windowed --name rapihin --icon rapihin.ico --add-data "rapihin.ico;." --add-data "assets;assets" --collect-all customtkinter --collect-all tkinterdnd2 --collect-all PIL --collect-all piexif --collect-all send2trash rapihin.py
 echo.
-echo Selesai! Hasilnya ada di folder dist\rapihin.exe
+echo Selesai! Hasil portable ada di dist\rapihin.exe
 pause

@@ -1,10 +1,10 @@
-; Inno Setup script untuk rapihin
-; Compile lewat build_installer.bat atau buka file ini di Inno Setup Compiler
+; Inno Setup script untuk rapihin v2.0.0
+; Compile dengan Inno Setup 7
 
 #define MyAppName "rapihin"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "2.0.0"
 #define MyAppPublisher "Fajar Umarsandi"
-#define MyAppURL "https://umarsandifajar.github.io/bio-sandiana/"
+#define MyAppURL "http://sandiana.my.id"
 #define MyAppExeName "rapihin.exe"
 
 [Setup]
@@ -18,11 +18,10 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
 LicenseFile=LICENSE
-; Install per-user (tanpa admin). Pengguna tetap bisa memilih "semua pengguna" lewat dialog.
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=installer_output
-OutputBaseFilename=rapihin-setup-{#MyAppVersion}
+OutputBaseFilename=rapihin-setup-v{#MyAppVersion}
 SetupIconFile=rapihin.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2
