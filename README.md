@@ -12,7 +12,8 @@ Pilah file otomatis per jenis & tanggal, ikut proses subfolder, dan temukan file
 ![Python](https://img.shields.io/badge/python-3.9%2B-6F75E8)
 ![License](https://img.shields.io/badge/license-MIT-6F75E8)
 
-<img src="https://i.ibb.co.com/gbT18r3D/rapihin.webp" alt="Tampilan rapihin" width="720">
+
+<img width="1672" height="941" alt="Futuristic Rapihin App Promo" src="https://github.com/user-attachments/assets/27a3b713-c71b-4014-9a09-d79eb5bd669c" />
 
 </div>
 
