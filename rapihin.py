@@ -1,5 +1,20 @@
+"""
+rapihin.py - Rapihin V2.0 Desktop Application
+Theme: Sleek Dark Matte & Cyber Lime / Neon Chartreuse (Sales Target Aesthetic)
+Features:
+- Subfolder Dropdown Autodetection for Stabilo & Custom Rules (no manual typo)
+- Custom Frameless Pop-up Modals matching dark matte theme
+- Realistic Folder Messiness & Clutter Index calculation
+- Stabilo (Protected Folder Exclusions)
+- Custom Keyword Routing Rules
+- Custom Borderless Frameless Window
+- Instant Folder Quick-Inspect (JPG, PDF, EXE breakdown)
+- Fast Tiered Hashing for Duplicates
+- Bilingual Support (ID / EN)
+- Donate Link (http://sandiana.my.id)
+"""
+
 import ctypes
-import hashlib
 import json
 import os
 import queue
@@ -14,7 +29,8 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-try:  # drag & drop itu opsional, kalau gagal aplikasi tetap jalan
+# Drag & drop support
+try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
     BASES = (ctk.CTk, TkinterDnD.DnDWrapper)
 except Exception:
@@ -22,750 +38,1596 @@ except Exception:
     DND_FILES = None
     BASES = (ctk.CTk,)
 
+from PIL import Image
+
+import core_engine as engine
+import ui_theme as theme
+
 APP_NAME = "rapihin"
-APP_VERSION = "1.1.0"
-DONATE_URL = "https://umarsandifajar.github.io/bio-sandiana/"
-
-KATEGORI = {
-    "images": {"jpg", "jpeg", "png", "webp", "gif", "bmp", "svg", "heic", "tiff", "ico"},
-    "video": {"mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v"},
-    "docs": {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "odt", "rtf"},
-    "audio": {"mp3", "wav", "flac", "m4a", "aac", "ogg"},
-    "archives": {"zip", "rar", "7z", "tar", "gz"},
-    "installers": {"exe", "msi"},
-}
-CAT_NAMES = {
-    "id": {"images": "Gambar", "video": "Video", "docs": "Dokumen", "audio": "Audio",
-           "archives": "Arsip", "installers": "Installer", "other": "Lainnya"},
-    "en": {"images": "Images", "video": "Videos", "docs": "Documents", "audio": "Audio",
-           "archives": "Archives", "installers": "Installers", "other": "Others"},
-}
-DUP_NAMES = {"id": "_Duplikat", "en": "_Duplicates"}
-DATE_KEYS = ["none", "year", "month"]
-SRC_KEYS = ["mtime", "ctime"]
-
-UNDO_FILE = ".rapihin_undo.json"
-SKIP_FILES = {"desktop.ini", "thumbs.db", UNDO_FILE}
-SKIP_DIRS = {"_Duplikat", "_Duplicates", "node_modules", "$RECYCLE.BIN", "System Volume Information"}
-
-# Palet soft dark
-BG = "#13141A"
-CARD = "#1B1D26"
-CARD2 = "#242736"
-BORDER = "#2B2F40"
-TEXT = "#E6E8F0"
-MUTED = "#8B90A5"
-ACCENT = "#6F75E8"
-ACCENT_HOVER = "#5E64D6"
-SOFT_HOVER = "#2E3245"
+APP_VERSION = engine.APP_VERSION
+DONATE_URL = "http://sandiana.my.id"
+REPO_URL = f"https://github.com/{engine.GITHUB_REPO}"
 
 TR = {
     "id": {
-        "subtitle": "Rapihin folder berantakan: pilah per jenis & tanggal, buang duplikat.",
-        "folder": "Folder",
-        "placeholder": "Seret & lepas folder ke sini, atau klik Pilih folder",
-        "pick": "Pilih folder",
-        "options": "Opsi",
-        "sw_type": "Pisahin per jenis file",
-        "sw_sub": "Ikut proses subfolder",
-        "sw_dup": "Deteksi file duplikat",
-        "sw_clean": "Bersihin folder kosong",
-        "grp_date": "Kelompokkan tanggal",
-        "src_date": "Sumber tanggal",
-        "d_none": "Tanpa tanggal", "d_year": "Per tahun", "d_month": "Per bulan",
-        "s_mod": "Tanggal diubah", "s_cre": "Tanggal dibuat",
-        "btn_preview": "Preview", "btn_run": "Rapihin sekarang", "btn_undo": "Undo",
-        "intro": "Pilih folder, lalu klik Preview buat lihat hasilnya dulu sebelum ada yang dipindah.",
-        "warn_invalid": "Pilih folder yang valid dulu ya.",
-        "warn_sensitive": "Folder ini terlalu sensitif (root drive / folder sistem). Pilih folder lain.",
-        "no_undo": "Nggak ada riwayat yang bisa di-undo di folder ini.",
-        "scan": "Memindai file...",
-        "found": "Ketemu {n} file.",
-        "check_dup": "Ngecek duplikat di {n} file kandidat...",
-        "preview_head": "\nPREVIEW: {m} file akan dipindah, {d} duplikat.\n",
-        "nothing": "Nggak ada yang perlu dirapihin dengan opsi ini.",
-        "more_folders": "  ... dan {n} folder lain",
-        "dup_line": "\nDuplikat: {n} file ({size} bisa dihemat), dipindah ke {dir}\\",
-        "more_items": "  ... dan {n} lainnya",
-        "preview_hint": "\nBelum ada yang dipindah. Klik 'Rapihin sekarang' kalau udah oke.",
-        "nothing_info": "Nggak ada file yang perlu dirapihin.",
-        "confirm_move": "Pindahin {n} file",
-        "confirm_dups": " dan {d} file duplikat (ke folder {dir})",
-        "confirm_tail": "?\n\nBisa dibalikin lewat tombol Undo.",
-        "starting": "Mulai merapikan...\n",
-        "fail": "Gagal: {name} ({err})",
-        "done_line": "Selesai! {n} file dipindah, {g} gagal.",
-        "clean_n": "{n} folder kosong dibersihin.",
-        "undo_hint": "Hasilnya kurang pas? Klik Undo buat balikin semua.",
-        "undoing": "Mengembalikan file...\n",
-        "undone": "{n} file dikembalikan ke tempat semula.",
-        "err": "Error: {e}",
-        "sum_title": "\nRingkasan",
-        "sum_total": "  Total dipindah : {n} file ({size})",
-        "sum_dups": "  Duplikat       : {n} file ({size} dihemat)",
-        "status_done": "✓ {n} file dirapihin ({size})",
-        "status_dups": "  ·  {d} duplikat ({size})",
-        "status_undo": "↩ {n} file dikembalikan",
+        "title": "rapihin",
+        "subtitle": "Smart Windows Desktop & File Organizer",
+        "folder_card": "FOLDER TARGET",
+        "placeholder": "Pilih atau seret folder ke sini...",
+        "btn_browse": "Pilih Folder",
+        "quick_inspect_title": "ANALISIS AWAL ISI FOLDER",
+        "inspect_clean": "Status Folder: Sangat Rapi",
+        "inspect_messy": "Status: Sangat Berantakan ({count} jenis file campur aduk)",
+        "card_clutter_title": "INDEKS KERAPIAN FOLDER",
+        "neat_perfect": "Folder Bersih & Teratur",
+        "neat_messy": "Butuh Dirapikan Segera",
+        "stabilo_title": "STABILO FOLDER (FOLDER PENTING & KEBAL)",
+        "stabilo_hint": "Folder yang distabilo TIDAK AKAN disentuh, dipindah, atau diotak-atik sama sekali.",
+        "btn_add_stabilo": "+ Stabilo Folder",
+        "custom_rules_title": "ATURAN KHUSUS KATA KUNCI (CUSTOM ROUTING)",
+        "custom_rules_hint": "Contoh: File ada kata 'skripsi' otomatis masuk folder 'Penting_Skripsi'.",
+        "btn_add_rule": "+ Tambah Aturan",
+        "options_title": "PENGATURAN PINTAR",
+        "opt_type": "Kelompokkan per Kategori File",
+        "opt_exif": "Gunakan Tanggal Foto EXIF / Artis Audio",
+        "opt_date": "Struktur Folder Tanggal",
+        "opt_dup": "Deteksi Duplikat Cepat (Tiered Hash)",
+        "opt_recycle": "Kirim Duplikat ke Recycle Bin Windows",
+        "opt_sub": "Pindai Termasuk Subfolder",
+        "opt_clean": "Hapus Folder Kosong Otomatis",
+        "opt_context": "Integrasi Klik Kanan Windows ('Rapihin')",
+        "opt_junk": "Deteksi Versi Installer Lama & File 0-Byte",
+        "btn_preview": "Pratinjau Hasil",
+        "btn_run": "Rapihin Sekarang",
+        "btn_undo": "Undo Terakhir",
+        "status_ready": "Pilih folder untuk melihat analisis awal.",
+        "status_scanning": "Memindai file & menganalisis isi folder...",
+        "status_running": "Mengeksekusi penataan file...",
+        "update_available": "✦ Update Baru {ver} Tersedia! Klik untuk download",
     },
     "en": {
-        "subtitle": "Tidy up messy folders: sort by type & date, remove duplicates.",
-        "folder": "Folder",
-        "placeholder": "Drag & drop a folder here, or click Choose folder",
-        "pick": "Choose folder",
-        "options": "Options",
-        "sw_type": "Sort by file type",
-        "sw_sub": "Include subfolders",
-        "sw_dup": "Detect duplicate files",
-        "sw_clean": "Remove empty folders",
-        "grp_date": "Group by date",
-        "src_date": "Date source",
-        "d_none": "No date", "d_year": "By year", "d_month": "By month",
-        "s_mod": "Date modified", "s_cre": "Date created",
-        "btn_preview": "Preview", "btn_run": "Organize now", "btn_undo": "Undo",
-        "intro": "Choose a folder, then click Preview to see the result before anything is moved.",
-        "warn_invalid": "Please choose a valid folder first.",
-        "warn_sensitive": "This folder is too sensitive (drive root / system folder). Choose another one.",
-        "no_undo": "There is nothing to undo in this folder.",
-        "scan": "Scanning files...",
-        "found": "Found {n} files.",
-        "check_dup": "Checking {n} candidate files for duplicates...",
-        "preview_head": "\nPREVIEW: {m} files will be moved, {d} duplicates.\n",
-        "nothing": "Nothing to organize with these options.",
-        "more_folders": "  ... and {n} more folders",
-        "dup_line": "\nDuplicates: {n} files ({size} can be saved), moved to {dir}\\",
-        "more_items": "  ... and {n} more",
-        "preview_hint": "\nNothing has been moved yet. Click 'Organize now' when you're happy with it.",
-        "nothing_info": "There are no files to organize.",
-        "confirm_move": "Move {n} files",
-        "confirm_dups": " and {d} duplicate files (to the {dir} folder)",
-        "confirm_tail": "?\n\nYou can restore them with the Undo button.",
-        "starting": "Organizing...\n",
-        "fail": "Failed: {name} ({err})",
-        "done_line": "Done! {n} files moved, {g} failed.",
-        "clean_n": "{n} empty folders removed.",
-        "undo_hint": "Not what you wanted? Click Undo to restore everything.",
-        "undoing": "Restoring files...\n",
-        "undone": "{n} files restored to their original place.",
-        "err": "Error: {e}",
-        "sum_title": "\nSummary",
-        "sum_total": "  Total moved : {n} files ({size})",
-        "sum_dups": "  Duplicates  : {n} files ({size} saved)",
-        "status_done": "✓ {n} files organized ({size})",
-        "status_dups": "  ·  {d} duplicates ({size})",
-        "status_undo": "↩ {n} files restored",
-    },
+        "title": "rapihin",
+        "subtitle": "Smart Windows Desktop & File Organizer",
+        "folder_card": "TARGET FOLDER",
+        "placeholder": "Select or drag a folder here...",
+        "btn_browse": "Browse Folder",
+        "quick_inspect_title": "INITIAL FOLDER BREAKDOWN",
+        "inspect_clean": "Folder Status: Very Neat",
+        "inspect_messy": "Status: Highly Cluttered ({count} mixed file types)",
+        "card_clutter_title": "FOLDER TIDINESS SCORE",
+        "neat_perfect": "Clean & Organized",
+        "neat_messy": "Needs Urgent Cleanup",
+        "stabilo_title": "STABILO FOLDERS (PROTECTED & IMMUNE)",
+        "stabilo_hint": "Folders highlighted with Stabilo will NEVER be touched or moved.",
+        "btn_add_stabilo": "+ Highlight Folder",
+        "custom_rules_title": "CUSTOM KEYWORD ROUTING (SAFE FILTER)",
+        "custom_rules_hint": "Example: File with keyword 'invoice' automatically goes to 'Finance/Invoices'.",
+        "btn_add_rule": "+ Add Rule",
+        "options_title": "SMART CONFIGURATION",
+        "opt_type": "Organize by File Category",
+        "opt_exif": "Use Camera EXIF Date / Audio Artist",
+        "opt_date": "Date Folder Structure",
+        "opt_dup": "Fast Duplicate Detection (Tiered Hash)",
+        "opt_recycle": "Send Duplicates to Windows Recycle Bin",
+        "opt_sub": "Include Subfolders in Scan",
+        "opt_clean": "Clean Empty Folders Automatically",
+        "opt_context": "Windows Right-Click Context Menu",
+        "opt_junk": "Clean Old Installer Versions & 0-Byte Files",
+        "btn_preview": "Preview Changes",
+        "btn_run": "Organize Now",
+        "btn_undo": "Undo Last",
+        "status_ready": "Select a folder to view initial inspection.",
+        "status_scanning": "Scanning files and parsing folder content...",
+        "status_running": "Executing organization plan...",
+        "update_available": "✦ New Update {ver} Available! Click to download",
+    }
+}
+
+CAT_ICONS = {
+    "images": "🖼️",
+    "video": "🎬",
+    "docs": "📄",
+    "audio": "🎵",
+    "archives": "📦",
+    "installers": "⚙️",
+    "code": "💻",
+    "other": "📁"
 }
 
 
-# ---------- Logika ----------
-def resource(nama):
+def resource_path(relative_path):
     base = getattr(sys, "_MEIPASS", None) or Path(__file__).resolve().parent
-    return Path(base) / nama
+    return Path(base) / relative_path
 
 
-def bahasa_sistem():
-    try:
-        return "id" if (ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0xFF) == 0x21 else "en"
-    except Exception:
-        return "en"
+def get_settings_file():
+    appdata = Path(os.environ.get("APPDATA") or Path.home()) / APP_NAME
+    appdata.mkdir(parents=True, exist_ok=True)
+    return appdata / "settings.json"
 
 
-def settings_path():
-    return Path(os.environ.get("APPDATA") or Path.home()) / APP_NAME / "settings.json"
+# --- Custom Frameless Dialogs for Stabilo & Rules ---
+
+class StabiloDialog(theme.CustomModalDialog):
+    """Custom frameless popup that lets user pick an existing subfolder directly or type a new one"""
+    def __init__(self, parent, subfolders):
+        super().__init__(parent, title="🛡️ Stabilo Folder Penting", width=460, height=270)
+        self.subfolders = subfolders
+
+        lbl_desc = ctk.CTkLabel(
+            self.body,
+            text="Pilih subfolder yang ada di target, atau buat nama baru:",
+            font=theme.get_font(12, "normal"),
+            text_color=theme.TEXT_SECONDARY
+        )
+        lbl_desc.pack(anchor="w", pady=(0, 8))
+
+        # Dropdown options
+        options = ["(Pilih dari subfolder yang ada...)"] + sorted(self.subfolders)
+        self.combo_var = ctk.StringVar(value=options[0])
+
+        self.combo = ctk.CTkComboBox(
+            self.body,
+            values=options,
+            variable=self.combo_var,
+            font=theme.get_font(12, "normal"),
+            height=38,
+            corner_radius=10,
+            fg_color="#0F0F11",
+            border_color=theme.BORDER_LIGHT,
+            button_color=theme.ACCENT_MUTED_LIME,
+            button_hover_color=theme.ACCENT_LIME,
+            dropdown_fg_color="#18181C",
+            dropdown_hover_color="#25252C",
+            dropdown_text_color=theme.TEXT_PRIMARY,
+            command=self._on_combo_select
+        )
+        self.combo.pack(fill="x", pady=(0, 10))
+
+        # Manual entry field (auto-populated by dropdown)
+        self.entry_var = ctk.StringVar()
+        self.entry = ctk.CTkEntry(
+            self.body,
+            textvariable=self.entry_var,
+            placeholder_text="Atau ketik nama folder di sini...",
+            font=theme.get_font(12, "normal"),
+            height=38,
+            corner_radius=10,
+            fg_color="#0F0F11",
+            border_color=theme.BORDER_LIGHT,
+            text_color=theme.TEXT_PRIMARY
+        )
+        self.entry.pack(fill="x", pady=(0, 16))
+
+        # Action Buttons
+        btn_box = ctk.CTkFrame(self.body, fg_color="transparent")
+        btn_box.pack(fill="x")
+
+        btn_cancel = ctk.CTkButton(
+            btn_box,
+            text="Batal",
+            font=theme.get_font(12, "bold"),
+            height=36,
+            corner_radius=10,
+            fg_color="#24242A",
+            hover_color="#2F2F36",
+            text_color=theme.TEXT_SECONDARY,
+            command=self._cancel
+        )
+        btn_cancel.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        btn_save = ctk.CTkButton(
+            btn_box,
+            text="Simpan & Lindungi",
+            font=theme.get_font(12, "bold"),
+            height=36,
+            corner_radius=10,
+            fg_color=theme.ACCENT_LIME,
+            hover_color=theme.ACCENT_LIME_HOVER,
+            text_color="#121214",
+            command=self._on_save
+        )
+        btn_save.pack(side="right", fill="x", expand=True, padx=(6, 0))
+
+    def _on_combo_select(self, choice):
+        if not choice.startswith("("):
+            self.entry_var.set(choice)
+
+    def _on_save(self):
+        val = self.entry_var.get().strip()
+        if val:
+            self.result = val
+            self.destroy()
 
 
-def cari_kategori(ext):
-    for key, exts in KATEGORI.items():
-        if ext in exts:
-            return key
-    return "other"
+class CustomRuleDialog(theme.CustomModalDialog):
+    """Custom frameless popup for adding a keyword routing rule with subfolder picker"""
+    def __init__(self, parent, subfolders):
+        super().__init__(parent, title="🔍 Aturan Kata Kunci Khusus", width=480, height=340)
+        self.subfolders = subfolders
+
+        # Keyword
+        lbl_kw = ctk.CTkLabel(
+            self.body,
+            text="1. Kata kunci dalam nama file (misal: 'skripsi', 'invoice'):",
+            font=theme.get_font(11, "bold"),
+            text_color=theme.ACCENT_LIME
+        )
+        lbl_kw.pack(anchor="w", pady=(0, 4))
+
+        self.kw_entry = ctk.CTkEntry(
+            self.body,
+            placeholder_text="Contoh: skripsi",
+            font=theme.get_font(12, "normal"),
+            height=36,
+            corner_radius=10,
+            fg_color="#0F0F11",
+            border_color=theme.BORDER_LIGHT,
+            text_color=theme.TEXT_PRIMARY
+        )
+        self.kw_entry.pack(fill="x", pady=(0, 10))
+
+        # Target Folder
+        lbl_dest = ctk.CTkLabel(
+            self.body,
+            text="2. Pilih folder tujuan dari subfolder yang ada, atau buat baru:",
+            font=theme.get_font(11, "bold"),
+            text_color=theme.TEXT_PRIMARY
+        )
+        lbl_dest.pack(anchor="w", pady=(0, 4))
+
+        options = ["(Pilih dari subfolder yang ada...)"] + sorted(self.subfolders)
+        self.combo_var = ctk.StringVar(value=options[0])
+
+        self.combo = ctk.CTkComboBox(
+            self.body,
+            values=options,
+            variable=self.combo_var,
+            font=theme.get_font(12, "normal"),
+            height=36,
+            corner_radius=10,
+            fg_color="#0F0F11",
+            border_color=theme.BORDER_LIGHT,
+            button_color=theme.ACCENT_MUTED_LIME,
+            button_hover_color=theme.ACCENT_LIME,
+            dropdown_fg_color="#18181C",
+            dropdown_hover_color="#25252C",
+            dropdown_text_color=theme.TEXT_PRIMARY,
+            command=self._on_combo_select
+        )
+        self.combo.pack(fill="x", pady=(0, 8))
+
+        self.dest_entry = ctk.CTkEntry(
+            self.body,
+            placeholder_text="Contoh: Dokumen/Penting_Skripsi",
+            font=theme.get_font(12, "normal"),
+            height=36,
+            corner_radius=10,
+            fg_color="#0F0F11",
+            border_color=theme.BORDER_LIGHT,
+            text_color=theme.TEXT_PRIMARY
+        )
+        self.dest_entry.pack(fill="x", pady=(0, 16))
+
+        # Action Buttons
+        btn_box = ctk.CTkFrame(self.body, fg_color="transparent")
+        btn_box.pack(fill="x")
+
+        btn_cancel = ctk.CTkButton(
+            btn_box,
+            text="Batal",
+            font=theme.get_font(12, "bold"),
+            height=36,
+            corner_radius=10,
+            fg_color="#24242A",
+            hover_color="#2F2F36",
+            text_color=theme.TEXT_SECONDARY,
+            command=self._cancel
+        )
+        btn_cancel.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        btn_save = ctk.CTkButton(
+            btn_box,
+            text="Simpan Aturan",
+            font=theme.get_font(12, "bold"),
+            height=36,
+            corner_radius=10,
+            fg_color=theme.ACCENT_LIME,
+            hover_color=theme.ACCENT_LIME_HOVER,
+            text_color="#121214",
+            command=self._on_save
+        )
+        btn_save.pack(side="right", fill="x", expand=True, padx=(6, 0))
+
+    def _on_combo_select(self, choice):
+        if not choice.startswith("("):
+            self.dest_entry.delete(0, "end")
+            self.dest_entry.insert(0, choice)
+
+    def _on_save(self):
+        kw = self.kw_entry.get().strip().lower()
+        dest = self.dest_entry.get().strip()
+        if kw and dest:
+            self.result = {"keyword": kw, "folder": dest}
+            self.destroy()
 
 
-def target_unik(path):
-    if not path.exists():
-        return path
-    i = 1
-    while True:
-        baru = path.with_name(f"{path.stem}_{i}{path.suffix}")
-        if not baru.exists():
-            return baru
-        i += 1
-
-
-def fmt_size(n):
-    for u in ("B", "KB", "MB", "GB"):
-        if n < 1024:
-            return f"{n:.0f} {u}" if u == "B" else f"{n:.1f} {u}"
-        n /= 1024
-    return f"{n:.1f} TB"
-
-
-def hash_file(p):
-    h = hashlib.blake2b(digest_size=16)
-    with open(p, "rb") as f:
-        while chunk := f.read(1 << 20):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def nama_ok(nama):
-    return not nama.startswith(".") and nama.lower() not in SKIP_FILES
-
-
-def scan(root, rekursif):
-    hasil = []
-    if not rekursif:
-        for f in root.iterdir():
-            if f.is_file() and nama_ok(f.name):
-                hasil.append(f)
-        return hasil
-    for dp, dns, fns in os.walk(root):
-        dns[:] = [d for d in dns if not d.startswith(".") and d not in SKIP_DIRS]
-        for fn in fns:
-            if nama_ok(fn):
-                hasil.append(Path(dp) / fn)
-    return hasil
-
-
-def tujuan_dir(f, root, o):
-    t = root
-    if o["type"]:
-        t = t / CAT_NAMES[o["lang"]][cari_kategori(f.suffix.lstrip(".").lower())]
-    if o["date"] != "none":
-        st = f.stat()
-        ts = st.st_mtime if o["src"] == "mtime" else st.st_ctime
-        d = datetime.fromtimestamp(ts)
-        t = t / (f"{d:%Y}" if o["date"] == "year" else f"{d:%Y-%m}")
-    return t
-
-
-def folder_berbahaya(p):
-    if p.parent == p:
-        return True
-    bahaya = {"windows", "program files", "program files (x86)", "programdata"}
-    return any(x.lower() in bahaya for x in p.parts)
-
-
-def bersihin_kosong(dirs, root):
-    n = 0
-    for d in sorted(dirs, key=lambda p: len(p.parts), reverse=True):
-        p = d
-        while p != root and root in p.parents:
-            try:
-                p.rmdir()
-                n += 1
-            except OSError:
-                break
-            p = p.parent
-    return n
-
-
-# ---------- Aplikasi ----------
-class App(*BASES):
+class RapihinApp(*BASES):
     def __init__(self):
         super().__init__()
-        self.dnd_aktif = False
+        theme.load_custom_fonts()
+
+        self.dnd_available = False
         if TkinterDnD is not None:
             try:
                 self.TkdndVersion = TkinterDnD._require(self)
-                self.dnd_aktif = True
+                self.dnd_available = True
             except Exception:
-                self.dnd_aktif = False
+                self.dnd_available = False
 
         ctk.set_appearance_mode("dark")
-        self.title(APP_NAME)
-        self.geometry("860x860")
-        self.minsize(780, 800)
-        self.configure(fg_color=BG)
-        self.after(250, self._pasang_ikon)
+        self.title(f"{APP_NAME} v{APP_VERSION}")
+        self.geometry("920x890")
+        self.minsize(860, 820)
+        self.configure(fg_color=theme.BG_COLOR)
 
-        cfg = self._muat_settings()
-        self.lang = cfg.get("lang") or bahasa_sistem()
-        self.date_key = cfg.get("date") if cfg.get("date") in DATE_KEYS else "month"
-        self.src_key = cfg.get("src") if cfg.get("src") in SRC_KEYS else "mtime"
+        self.overrideredirect(True)
+        self._set_window_icon()
 
-        self.q = queue.Queue()
-        self.sibuk = False
-        self.pending = None
-        self.btns = []
+        # Settings & State
+        self.cfg = self._load_settings()
+        self.lang = self.cfg.get("lang", "id")
+        self.folder_var = ctk.StringVar(value=self.cfg.get("folder", ""))
+        self.date_mode = ctk.StringVar(value=self.cfg.get("date_mode", "month"))
 
-        self.folder = ctk.StringVar(value=cfg.get("folder", ""))
-        self.v_type = ctk.BooleanVar(value=cfg.get("type", True))
-        self.v_sub = ctk.BooleanVar(value=cfg.get("sub", False))
-        self.v_dup = ctk.BooleanVar(value=cfg.get("dup", False))
-        self.v_clean = ctk.BooleanVar(value=cfg.get("clean", True))
+        # Stabilo & Custom Rules
+        self.stabilo_folders = set(self.cfg.get("stabilo_folders", ["Penting", "Arsip_Pribadi"]))
+        self.custom_rules = self.cfg.get("custom_rules", [
+            {"keyword": "skripsi", "folder": "Dokumen/Penting_Skripsi"},
+            {"keyword": "invoice", "folder": "Dokumen/Keuangan_Invoice"},
+            {"keyword": "rahasia", "folder": "Dokumen/Pribadi_Aman"}
+        ])
 
-        self._build()
-        self.protocol("WM_DELETE_WINDOW", self._tutup)
-        if self.dnd_aktif:
-            try:
-                self.drop_target_register(DND_FILES)
-                self.dnd_bind("<<Drop>>", self._on_drop)
-            except Exception:
-                self.dnd_aktif = False
-        self.after(60, self._poll)
+        # Subfolders detected in current target folder
+        self.current_subfolders = []
 
-    # ----- Pengaturan -----
-    def _muat_settings(self):
+        # Feature Toggles
+        self.sw_type = ctk.BooleanVar(value=self.cfg.get("sw_type", True))
+        self.sw_exif = ctk.BooleanVar(value=self.cfg.get("sw_exif", True))
+        self.sw_dup = ctk.BooleanVar(value=self.cfg.get("sw_dup", True))
+        self.sw_recycle = ctk.BooleanVar(value=self.cfg.get("sw_recycle", False))
+        self.sw_sub = ctk.BooleanVar(value=self.cfg.get("sw_sub", False))
+        self.sw_clean = ctk.BooleanVar(value=self.cfg.get("sw_clean", True))
+        self.sw_junk = ctk.BooleanVar(value=self.cfg.get("sw_junk", True))
+        self.sw_context = ctk.BooleanVar(value=self.cfg.get("sw_context", False))
+
+        self.worker_busy = False
+        self.current_preview_plan = None
+        self.update_info = None
+
+        self._drag_start_x = 0
+        self._drag_start_y = 0
+
+        self._build_ui()
+        self._check_for_updates_background()
+
+        if len(sys.argv) > 1:
+            arg_path = Path(sys.argv[1])
+            if arg_path.is_dir():
+                self.folder_var.set(str(arg_path))
+                self._quick_inspect_folder(arg_path)
+        elif self.folder_var.get() and Path(self.folder_var.get()).is_dir():
+            self._quick_inspect_folder(Path(self.folder_var.get()))
+
+    def _set_window_icon(self):
         try:
-            return json.loads(settings_path().read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-
-    def simpan_settings(self):
-        data = {
-            "folder": self.folder.get(), "lang": self.lang, "date": self.date_key, "src": self.src_key,
-            "type": self.v_type.get(), "sub": self.v_sub.get(), "dup": self.v_dup.get(),
-            "clean": self.v_clean.get(),
-        }
-        try:
-            p = settings_path()
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            icon_ico = resource_path("rapihin.ico")
+            if icon_ico.exists():
+                self.iconbitmap(str(icon_ico))
         except Exception:
             pass
 
-    def _tutup(self):
-        self.simpan_settings()
+    def _load_settings(self):
+        s_file = get_settings_file()
+        if s_file.exists():
+            try:
+                with open(s_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    def _save_settings(self):
+        s_file = get_settings_file()
+        data = {
+            "lang": self.lang,
+            "folder": self.folder_var.get(),
+            "date_mode": self.date_mode.get(),
+            "stabilo_folders": list(self.stabilo_folders),
+            "custom_rules": self.custom_rules,
+            "sw_type": self.sw_type.get(),
+            "sw_exif": self.sw_exif.get(),
+            "sw_dup": self.sw_dup.get(),
+            "sw_recycle": self.sw_recycle.get(),
+            "sw_sub": self.sw_sub.get(),
+            "sw_clean": self.sw_clean.get(),
+            "sw_junk": self.sw_junk.get(),
+            "sw_context": self.sw_context.get(),
+        }
+        try:
+            with open(s_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            pass
+
+    def t(self, key):
+        return TR.get(self.lang, TR["id"]).get(key, key)
+
+    def _get_target_subfolders(self):
+        """Returns detected subfolder names in current selected folder"""
+        folder_str = self.folder_var.get().strip()
+        sub_list = []
+        if folder_str:
+            p = Path(folder_str)
+            if p.exists() and p.is_dir():
+                try:
+                    for d in p.iterdir():
+                        if d.is_dir() and not d.name.startswith(".") and d.name not in engine.SKIP_DIRS:
+                            sub_list.append(d.name)
+                except Exception:
+                    pass
+        return sub_list
+
+    # --- UI Construction ---
+
+    def _build_ui(self):
+        self.root_frame = ctk.CTkFrame(
+            self,
+            fg_color=theme.BG_COLOR,
+            corner_radius=16,
+            border_width=1,
+            border_color=theme.BORDER_LIGHT
+        )
+        self.root_frame.pack(fill="both", expand=True)
+
+        self._build_custom_titlebar(self.root_frame)
+
+        self.scroll_container = ctk.CTkScrollableFrame(
+            self.root_frame,
+            fg_color="transparent",
+            scrollbar_button_color=theme.BORDER_COLOR,
+            scrollbar_button_hover_color=theme.ACCENT_LIME
+        )
+        self.scroll_container.pack(fill="both", expand=True, padx=20, pady=(0, 16))
+
+        # Update Banner
+        self.update_card = ctk.CTkFrame(
+            self.scroll_container,
+            fg_color=theme.ACCENT_MUTED_LIME,
+            border_width=1,
+            border_color=theme.ACCENT_LIME,
+            corner_radius=12
+        )
+        self.lbl_update = ctk.CTkLabel(
+            self.update_card,
+            text="",
+            font=theme.get_font(12, "bold"),
+            text_color=theme.ACCENT_LIME,
+            cursor="hand2"
+        )
+        self.lbl_update.pack(padx=16, pady=8)
+        self.lbl_update.bind("<Button-1>", lambda e: self._open_update_link())
+
+        self._build_folder_card(self.scroll_container)
+        self._build_inspect_card(self.scroll_container)
+        self._build_progress_capsule(self.scroll_container)
+        self._build_metric_grid(self.scroll_container)
+        self._build_stabilo_card(self.scroll_container)
+        self._build_rules_card(self.scroll_container)
+        self._build_options_card(self.scroll_container)
+        self._build_actions_and_log(self.scroll_container)
+
+    def _build_custom_titlebar(self, parent):
+        titlebar = ctk.CTkFrame(parent, fg_color=theme.CARD_HEADER, height=44, corner_radius=14)
+        titlebar.pack(fill="x", padx=6, pady=6)
+        titlebar.pack_propagate(False)
+
+        titlebar.bind("<ButtonPress-1>", self._on_drag_start)
+        titlebar.bind("<B1-Motion>", self._on_drag_motion)
+
+        left_box = ctk.CTkFrame(titlebar, fg_color="transparent")
+        left_box.pack(side="left", padx=12)
+        left_box.bind("<ButtonPress-1>", self._on_drag_start)
+        left_box.bind("<B1-Motion>", self._on_drag_motion)
+
+        icon_png = resource_path("assets/icon.png")
+        if icon_png.exists():
+            try:
+                pil_img = Image.open(icon_png)
+                ctk_icon = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(24, 24))
+                lbl_icon = ctk.CTkLabel(left_box, image=ctk_icon, text="")
+                lbl_icon.pack(side="left", padx=(0, 8))
+            except Exception:
+                pass
+
+        self.lbl_logo = ctk.CTkLabel(
+            left_box,
+            text=APP_NAME.lower(),
+            font=theme.get_font(18, "bold"),
+            text_color=theme.TEXT_PRIMARY
+        )
+        self.lbl_logo.pack(side="left")
+
+        lbl_dot = ctk.CTkLabel(
+            left_box,
+            text=".",
+            font=theme.get_font(22, "bold"),
+            text_color=theme.ACCENT_LIME
+        )
+        lbl_dot.pack(side="left")
+
+        right_box = ctk.CTkFrame(titlebar, fg_color="transparent")
+        right_box.pack(side="right", padx=6)
+
+        self.btn_lang = ctk.CTkButton(
+            right_box,
+            text=self.lang.upper(),
+            width=40,
+            height=26,
+            corner_radius=8,
+            fg_color="#24242A",
+            border_width=1,
+            border_color="#303038",
+            text_color=theme.TEXT_PRIMARY,
+            hover_color=theme.CARD_HOVER,
+            font=theme.get_font(11, "bold"),
+            command=self._toggle_language
+        )
+        self.btn_lang.pack(side="left", padx=3)
+
+        btn_donate = ctk.CTkButton(
+            right_box,
+            text="☕ Donate",
+            width=70,
+            height=26,
+            corner_radius=8,
+            fg_color=theme.ACCENT_MUTED_LIME,
+            border_width=1,
+            border_color=theme.ACCENT_LIME,
+            text_color=theme.ACCENT_LIME,
+            hover_color="#2A3508",
+            font=theme.get_font(11, "bold"),
+            command=lambda: webbrowser.open(DONATE_URL)
+        )
+        btn_donate.pack(side="left", padx=3)
+
+        btn_github = ctk.CTkButton(
+            right_box,
+            text="GitHub",
+            width=60,
+            height=26,
+            corner_radius=8,
+            fg_color="#24242A",
+            border_width=1,
+            border_color="#303038",
+            text_color=theme.TEXT_SECONDARY,
+            hover_color=theme.CARD_HOVER,
+            font=theme.get_font(11, "normal"),
+            command=lambda: webbrowser.open(REPO_URL)
+        )
+        btn_github.pack(side="left", padx=3)
+
+        btn_min = ctk.CTkButton(
+            right_box,
+            text="—",
+            width=30,
+            height=26,
+            corner_radius=8,
+            fg_color="transparent",
+            text_color=theme.TEXT_SECONDARY,
+            hover_color="#24242A",
+            font=theme.get_font(11, "bold"),
+            command=self._minimize_window
+        )
+        btn_min.pack(side="left", padx=2)
+
+        btn_close = ctk.CTkButton(
+            right_box,
+            text="✕",
+            width=30,
+            height=26,
+            corner_radius=8,
+            fg_color="transparent",
+            text_color=theme.TEXT_SECONDARY,
+            hover_color="#EF4444",
+            font=theme.get_font(11, "bold"),
+            command=self._close_window
+        )
+        btn_close.pack(side="left", padx=2)
+
+    def _on_drag_start(self, event):
+        self._drag_start_x = event.x
+        self._drag_start_y = event.y
+
+    def _on_drag_motion(self, event):
+        deltax = event.x - self._drag_start_x
+        deltay = event.y - self._drag_start_y
+        x = self.winfo_x() + deltax
+        y = self.winfo_y() + deltay
+        self.geometry(f"+{x}+{y}")
+
+    def _minimize_window(self):
+        self.withdraw()
+        self.overrideredirect(False)
+        self.iconify()
+        self.bind("<FocusIn>", self._on_restore)
+
+    def _on_restore(self, event):
+        self.unbind("<FocusIn>")
+        self.overrideredirect(True)
+        self.deiconify()
+
+    def _close_window(self):
+        self._save_settings()
         self.destroy()
 
-    def _pasang_ikon(self):
-        try:
-            self.iconbitmap(str(resource("rapihin.ico")))
-        except Exception:
-            pass
-
-    def tr(self, key, **kw):
-        s = TR[self.lang].get(key) or TR["id"][key]
-        return s.format(**kw) if kw else s
-
-    # ----- UI -----
-    def _card(self, parent):
-        return ctk.CTkFrame(parent, corner_radius=18, fg_color=CARD, border_width=1, border_color=BORDER)
-
-    def _judul(self, parent, teks):
-        return ctk.CTkLabel(parent, text=teks, font=("Segoe UI Semibold", 13), text_color=TEXT)
-
-    def _switch(self, parent, teks, var):
-        return ctk.CTkSwitch(
-            parent, text=teks, variable=var, font=("Segoe UI", 13), text_color=TEXT,
-            progress_color=ACCENT, fg_color="#363A4D", button_color="#E6E8F0", button_hover_color="#FFFFFF",
-            command=self.simpan_settings,
+    def _build_folder_card(self, parent):
+        card = ctk.CTkFrame(
+            parent,
+            fg_color=theme.CARD_BG,
+            corner_radius=18,
+            border_width=1,
+            border_color=theme.BORDER_COLOR
         )
+        card.pack(fill="x", pady=(8, 12), ipady=4)
 
-    def _segmen(self, parent, values, command):
-        return ctk.CTkSegmentedButton(
-            parent, values=values, command=command, height=34, corner_radius=12,
-            fg_color=CARD2, unselected_color=CARD2, unselected_hover_color=SOFT_HOVER,
-            selected_color=ACCENT, selected_hover_color=ACCENT_HOVER,
-            text_color=TEXT, font=("Segoe UI", 12),
+        header_row = ctk.CTkFrame(card, fg_color="transparent")
+        header_row.pack(fill="x", padx=20, pady=(12, 6))
+
+        self.lbl_target_title = ctk.CTkLabel(
+            header_row,
+            text=self.t("folder_card"),
+            font=theme.get_font(11, "bold"),
+            text_color=theme.TEXT_MUTED
         )
+        self.lbl_target_title.pack(side="left")
 
-    def _tombol(self, parent, teks, cmd, primer=False):
-        b = ctk.CTkButton(
-            parent, text=teks, command=cmd, height=44, corner_radius=14,
-            font=("Segoe UI Semibold", 13), text_color=TEXT,
-            fg_color=ACCENT if primer else CARD2,
-            hover_color=ACCENT_HOVER if primer else SOFT_HOVER,
-            border_width=0 if primer else 1, border_color=BORDER,
+        input_row = ctk.CTkFrame(card, fg_color="transparent")
+        input_row.pack(fill="x", padx=16, pady=(0, 12))
+
+        self.entry_folder = ctk.CTkEntry(
+            input_row,
+            textvariable=self.folder_var,
+            placeholder_text=self.t("placeholder"),
+            font=theme.get_font(13, "normal"),
+            height=44,
+            corner_radius=12,
+            fg_color="#0F0F11",
+            border_color=theme.BORDER_COLOR,
+            text_color=theme.TEXT_PRIMARY
         )
-        self.btns.append(b)
-        return b
+        self.entry_folder.pack(side="left", fill="x", expand=True, padx=(0, 10))
 
-    def _build(self):
-        self.btns = []
-        self.wrap = ctk.CTkFrame(self, fg_color="transparent")
-        wrap = self.wrap
-        wrap.pack(fill="both", expand=True, padx=28, pady=(22, 14))
-
-        # Header
-        head = ctk.CTkFrame(wrap, fg_color="transparent")
-        head.pack(fill="x", pady=(0, 16))
-        kiri = ctk.CTkFrame(head, fg_color="transparent")
-        kiri.pack(side="left")
-        ctk.CTkLabel(kiri, text=APP_NAME, font=("Segoe UI Semibold", 32), text_color=TEXT).pack(anchor="w")
-        ctk.CTkLabel(kiri, text=self.tr("subtitle"), font=("Segoe UI", 13), text_color=MUTED).pack(anchor="w")
-        bhs = self._segmen(head, ["ID", "EN"], self._ganti_bahasa)
-        bhs.configure(width=90, height=30)
-        bhs.set(self.lang.upper())
-        bhs.pack(side="right", anchor="n")
-
-        # Folder
-        c1 = self._card(wrap)
-        c1.pack(fill="x", pady=(0, 12))
-        self._judul(c1, self.tr("folder")).pack(anchor="w", padx=18, pady=(14, 6))
-        row = ctk.CTkFrame(c1, fg_color="transparent")
-        row.pack(fill="x", padx=18)
-        ctk.CTkEntry(
-            row, textvariable=self.folder, height=40, corner_radius=12, fg_color=CARD2,
-            border_color=BORDER, text_color=TEXT, placeholder_text_color=MUTED,
-            placeholder_text=self.tr("placeholder"), font=("Segoe UI", 12),
-        ).pack(side="left", fill="x", expand=True)
-        ctk.CTkButton(
-            row, text=self.tr("pick"), width=120, height=40, corner_radius=12, fg_color=ACCENT,
-            hover_color=ACCENT_HOVER, font=("Segoe UI Semibold", 12), command=self._browse,
-        ).pack(side="left", padx=(10, 0))
-        pin = ctk.CTkFrame(c1, fg_color="transparent")
-        pin.pack(fill="x", padx=18, pady=(10, 16))
-        for nama in ("Downloads", "Desktop", "Documents"):
-            ctk.CTkButton(
-                pin, text=nama, width=96, height=28, corner_radius=10, fg_color=CARD2,
-                hover_color=SOFT_HOVER, text_color=MUTED, font=("Segoe UI", 11),
-                command=lambda n=nama: self._pintas(n),
-            ).pack(side="left", padx=(0, 8))
-
-        # Opsi
-        c2 = self._card(wrap)
-        c2.pack(fill="x", pady=(0, 12))
-        self._judul(c2, self.tr("options")).pack(anchor="w", padx=18, pady=(14, 8))
-        grid = ctk.CTkFrame(c2, fg_color="transparent")
-        grid.pack(fill="x", padx=18)
-        grid.columnconfigure((0, 1), weight=1)
-        self._switch(grid, self.tr("sw_type"), self.v_type).grid(row=0, column=0, sticky="w", pady=5)
-        self._switch(grid, self.tr("sw_sub"), self.v_sub).grid(row=0, column=1, sticky="w", pady=5)
-        self._switch(grid, self.tr("sw_dup"), self.v_dup).grid(row=1, column=0, sticky="w", pady=5)
-        self._switch(grid, self.tr("sw_clean"), self.v_clean).grid(row=1, column=1, sticky="w", pady=5)
-
-        seg = ctk.CTkFrame(c2, fg_color="transparent")
-        seg.pack(fill="x", padx=18, pady=(10, 16))
-        seg.columnconfigure((0, 1), weight=1, uniform="a")
-        left = ctk.CTkFrame(seg, fg_color="transparent")
-        left.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-        right = ctk.CTkFrame(seg, fg_color="transparent")
-        right.grid(row=0, column=1, sticky="ew", padx=(8, 0))
-
-        self.dvals = [self.tr("d_none"), self.tr("d_year"), self.tr("d_month")]
-        self.svals = [self.tr("s_mod"), self.tr("s_cre")]
-        ctk.CTkLabel(left, text=self.tr("grp_date"), font=("Segoe UI", 12), text_color=MUTED).pack(anchor="w", pady=(0, 4))
-        sd = self._segmen(left, self.dvals, self._on_date)
-        sd.set(self.dvals[DATE_KEYS.index(self.date_key)])
-        sd.pack(fill="x")
-        ctk.CTkLabel(right, text=self.tr("src_date"), font=("Segoe UI", 12), text_color=MUTED).pack(anchor="w", pady=(0, 4))
-        ss = self._segmen(right, self.svals, self._on_src)
-        ss.set(self.svals[SRC_KEYS.index(self.src_key)])
-        ss.pack(fill="x")
-
-        # Tombol aksi
-        bar = ctk.CTkFrame(wrap, fg_color="transparent")
-        bar.pack(fill="x", pady=(0, 12))
-        bar.columnconfigure((0, 2), weight=2, uniform="b")
-        bar.columnconfigure(1, weight=3, uniform="b")
-        self._tombol(bar, self.tr("btn_preview"), lambda: self._klik("preview")).grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        self._tombol(bar, self.tr("btn_run"), lambda: self._klik("run"), primer=True).grid(row=0, column=1, sticky="ew", padx=6)
-        self._tombol(bar, self.tr("btn_undo"), lambda: self._klik("undo")).grid(row=0, column=2, sticky="ew", padx=(6, 0))
-
-        self.progress = ctk.CTkProgressBar(wrap, height=6, corner_radius=6, fg_color=CARD2, progress_color=ACCENT)
-        self.progress.set(0)
-        self.progress.pack(fill="x", pady=(0, 6))
-        self.status = ctk.CTkLabel(wrap, text="", font=("Segoe UI Semibold", 12), text_color=ACCENT, anchor="w")
-        self.status.pack(fill="x", pady=(0, 6))
-
-        # Footer (dipack dulu supaya selalu di bawah)
-        foot = ctk.CTkFrame(wrap, fg_color="transparent")
-        foot.pack(side="bottom", pady=(10, 0))
-        ctk.CTkLabel(foot, text="by Fajar Umarsandi  |", font=("Segoe UI", 10), text_color=MUTED).pack(side="left")
-        ctk.CTkButton(
-            foot, text="Donate", width=44, height=16, fg_color="transparent", hover=False,
-            text_color=ACCENT, font=ctk.CTkFont(family="Segoe UI", size=10, underline=True),
-            command=lambda: webbrowser.open(DONATE_URL),
-        ).pack(side="left", padx=(2, 0))
-
-        self.log = ctk.CTkTextbox(
-            wrap, corner_radius=18, fg_color=CARD, border_width=1, border_color=BORDER,
-            text_color="#C9CCDA", font=("Consolas", 12), state="disabled",
+        self.btn_browse = ctk.CTkButton(
+            input_row,
+            text=self.t("btn_browse"),
+            font=theme.get_font(13, "bold"),
+            height=44,
+            corner_radius=12,
+            fg_color=theme.ACCENT_LIME,
+            hover_color=theme.ACCENT_LIME_HOVER,
+            text_color="#121214",
+            command=self._browse_folder
         )
-        self.log.pack(fill="both", expand=True)
-        self.tulis(self.tr("intro"))
+        self.btn_browse.pack(side="right")
 
-    # ----- Handler UI -----
-    def _ganti_bahasa(self, val):
-        if self.sibuk:
+        if self.dnd_available:
+            try:
+                self.entry_folder.drop_target_register(DND_FILES)
+                self.entry_folder.dnd_bind("<<Drop>>", self._on_dnd_drop)
+                card.drop_target_register(DND_FILES)
+                card.dnd_bind("<<Drop>>", self._on_dnd_drop)
+            except Exception:
+                pass
+
+    def _build_inspect_card(self, parent):
+        self.inspect_card = ctk.CTkFrame(
+            parent,
+            fg_color=theme.CARD_BG,
+            corner_radius=18,
+            border_width=1,
+            border_color=theme.BORDER_COLOR
+        )
+        self.inspect_card.pack(fill="x", pady=(0, 12), ipady=6)
+
+        head_row = ctk.CTkFrame(self.inspect_card, fg_color="transparent")
+        head_row.pack(fill="x", padx=20, pady=(12, 6))
+
+        self.lbl_inspect_title = ctk.CTkLabel(
+            head_row,
+            text=self.t("quick_inspect_title"),
+            font=theme.get_font(11, "bold"),
+            text_color=theme.TEXT_MUTED
+        )
+        self.lbl_inspect_title.pack(side="left")
+
+        self.lbl_inspect_status = ctk.CTkLabel(
+            head_row,
+            text="Belum ada folder dipilih",
+            font=theme.get_font(11, "bold"),
+            text_color=theme.TEXT_SECONDARY
+        )
+        self.lbl_inspect_status.pack(side="right")
+
+        self.chips_frame = ctk.CTkFrame(self.inspect_card, fg_color="transparent")
+        self.chips_frame.pack(fill="x", padx=16, pady=(4, 10))
+
+        self.lbl_no_folder = ctk.CTkLabel(
+            self.chips_frame,
+            text="Pilih folder di atas untuk melihat ringkasan jenis file.",
+            font=theme.get_font(12, "normal"),
+            text_color=theme.TEXT_MUTED
+        )
+        self.lbl_no_folder.pack(anchor="w", padx=4, pady=4)
+
+    def _build_progress_capsule(self, parent):
+        card = ctk.CTkFrame(
+            parent,
+            fg_color=theme.CARD_BG,
+            corner_radius=18,
+            border_width=1,
+            border_color=theme.BORDER_COLOR
+        )
+        card.pack(fill="x", pady=(0, 12), ipady=6)
+
+        head_row = ctk.CTkFrame(card, fg_color="transparent")
+        head_row.pack(fill="x", padx=20, pady=(12, 6))
+
+        self.lbl_status = ctk.CTkLabel(
+            head_row,
+            text=self.t("status_ready"),
+            font=theme.get_font(12, "bold"),
+            text_color=theme.TEXT_PRIMARY
+        )
+        self.lbl_status.pack(side="left")
+
+        self.lbl_percent = ctk.CTkLabel(
+            head_row,
+            text="0%",
+            font=theme.get_font(14, "bold"),
+            text_color=theme.ACCENT_LIME
+        )
+        self.lbl_percent.pack(side="right")
+
+        self.progress_bar = theme.GlowingProgressBar(card, height=22, corner_radius=11)
+        self.progress_bar.pack(fill="x", padx=20, pady=(4, 12))
+        self.progress_bar.set_progress(0.0)
+
+    def _build_metric_grid(self, parent):
+        grid = ctk.CTkFrame(parent, fg_color="transparent")
+        grid.pack(fill="x", pady=(0, 12))
+        grid.grid_columnconfigure((0, 1, 2), weight=1, uniform="stat_cards")
+
+        self.card_total = theme.MetricCard(
+            grid,
+            title="TOTAL FILE",
+            value="0",
+            subtitle="File terdeteksi",
+            icon_text="📂"
+        )
+        self.card_total.grid(row=0, column=0, padx=(0, 6), sticky="ew")
+
+        self.card_savings = theme.MetricCard(
+            grid,
+            title="DUPLIKAT BISA DIHEMAT",
+            value="0 MB",
+            subtitle="0 file duplikat",
+            icon_text="⚡",
+            is_highlight=True
+        )
+        self.card_savings.grid(row=0, column=1, padx=3, sticky="ew")
+
+        self.card_neat = theme.MetricCard(
+            grid,
+            title=self.t("card_clutter_title"),
+            value="--",
+            subtitle="Pilih folder dulu",
+            icon_text="✨"
+        )
+        self.card_neat.grid(row=0, column=2, padx=(6, 0), sticky="ew")
+
+    def _build_stabilo_card(self, parent):
+        card = ctk.CTkFrame(
+            parent,
+            fg_color=theme.CARD_BG,
+            corner_radius=18,
+            border_width=1,
+            border_color=theme.BORDER_COLOR
+        )
+        card.pack(fill="x", pady=(0, 12), ipady=6)
+
+        head_row = ctk.CTkFrame(card, fg_color="transparent")
+        head_row.pack(fill="x", padx=20, pady=(12, 4))
+
+        self.lbl_stabilo_title = ctk.CTkLabel(
+            head_row,
+            text=self.t("stabilo_title"),
+            font=theme.get_font(11, "bold"),
+            text_color=theme.STABILO_YELLOW
+        )
+        self.lbl_stabilo_title.pack(side="left")
+
+        btn_add = ctk.CTkButton(
+            head_row,
+            text=self.t("btn_add_stabilo"),
+            font=theme.get_font(11, "bold"),
+            height=26,
+            corner_radius=8,
+            fg_color=theme.STABILO_BG,
+            border_width=1,
+            border_color=theme.STABILO_YELLOW,
+            text_color=theme.STABILO_YELLOW,
+            hover_color="#3D3507",
+            command=self._dialog_add_stabilo
+        )
+        btn_add.pack(side="right")
+
+        self.lbl_stabilo_hint = ctk.CTkLabel(
+            card,
+            text=self.t("stabilo_hint"),
+            font=theme.get_font(11, "normal"),
+            text_color=theme.TEXT_MUTED
+        )
+        self.lbl_stabilo_hint.pack(anchor="w", padx=20, pady=(0, 8))
+
+        self.stabilo_container = ctk.CTkFrame(card, fg_color="transparent")
+        self.stabilo_container.pack(fill="x", padx=16, pady=(0, 8))
+        self._render_stabilo_chips()
+
+    def _render_stabilo_chips(self):
+        for w in self.stabilo_container.winfo_children():
+            w.destroy()
+
+        if not self.stabilo_folders:
+            lbl = ctk.CTkLabel(
+                self.stabilo_container,
+                text="Belum ada folder yang distabilo. Tambahkan folder penting agar aman 100%.",
+                font=theme.get_font(11, "normal"),
+                text_color=theme.TEXT_MUTED
+            )
+            lbl.pack(anchor="w", padx=4, pady=2)
             return
-        self.lang = val.lower()
-        self.simpan_settings()
-        self.after(30, self._bangun_ulang)
 
-    def _bangun_ulang(self):
-        self.wrap.destroy()
-        self._build()
+        row = ctk.CTkFrame(self.stabilo_container, fg_color="transparent")
+        row.pack(fill="x")
+        for f_name in sorted(self.stabilo_folders):
+            chip = theme.StabiloChip(
+                row,
+                folder_name=f_name,
+                on_remove=lambda name=f_name: self._remove_stabilo(name)
+            )
+            chip.pack(side="left", padx=4, pady=3)
 
-    def _on_date(self, val):
-        self.date_key = DATE_KEYS[self.dvals.index(val)]
-        self.simpan_settings()
+    def _dialog_add_stabilo(self):
+        subfolders = self._get_target_subfolders()
+        dlg = StabiloDialog(self, subfolders=subfolders)
+        self.wait_window(dlg)
+        if dlg.result:
+            self.stabilo_folders.add(dlg.result)
+            self._render_stabilo_chips()
+            self._save_settings()
 
-    def _on_src(self, val):
-        self.src_key = SRC_KEYS[self.svals.index(val)]
-        self.simpan_settings()
+    def _remove_stabilo(self, name):
+        if name in self.stabilo_folders:
+            self.stabilo_folders.remove(name)
+            self._render_stabilo_chips()
+            self._save_settings()
 
-    def tulis(self, teks):
-        self.log.configure(state="normal")
-        self.log.insert("end", teks + "\n")
-        self.log.see("end")
-        self.log.configure(state="disabled")
+    def _build_rules_card(self, parent):
+        card = ctk.CTkFrame(
+            parent,
+            fg_color=theme.CARD_BG,
+            corner_radius=18,
+            border_width=1,
+            border_color=theme.BORDER_COLOR
+        )
+        card.pack(fill="x", pady=(0, 12), ipady=6)
 
-    def bersihkan(self):
-        self.log.configure(state="normal")
-        self.log.delete("1.0", "end")
-        self.log.configure(state="disabled")
-        self.status.configure(text="")
+        head_row = ctk.CTkFrame(card, fg_color="transparent")
+        head_row.pack(fill="x", padx=20, pady=(12, 4))
 
-    def _browse(self):
-        d = filedialog.askdirectory()
-        if d:
-            self.folder.set(d)
-            self.simpan_settings()
+        self.lbl_rules_title = ctk.CTkLabel(
+            head_row,
+            text=self.t("custom_rules_title"),
+            font=theme.get_font(11, "bold"),
+            text_color=theme.ACCENT_LIME
+        )
+        self.lbl_rules_title.pack(side="left")
 
-    def _pintas(self, nama):
-        h = Path.home()
-        for c in (h / "OneDrive" / nama, h / nama):
-            if c.is_dir():
-                self.folder.set(str(c))
-                self.simpan_settings()
-                return
+        btn_add = ctk.CTkButton(
+            head_row,
+            text=self.t("btn_add_rule"),
+            font=theme.get_font(11, "bold"),
+            height=26,
+            corner_radius=8,
+            fg_color=theme.ACCENT_MUTED_LIME,
+            border_width=1,
+            border_color=theme.ACCENT_LIME,
+            text_color=theme.ACCENT_LIME,
+            hover_color="#243006",
+            command=self._dialog_add_rule
+        )
+        btn_add.pack(side="right")
 
-    def _on_drop(self, event):
-        try:
-            paths = self.tk.splitlist(event.data)
-            if not paths:
-                return
-            p = Path(paths[0])
-            if p.is_file():
-                p = p.parent
-            self.folder.set(str(p))
-            self.simpan_settings()
-        except Exception:
-            pass
+        self.lbl_rules_hint = ctk.CTkLabel(
+            card,
+            text=self.t("custom_rules_hint"),
+            font=theme.get_font(11, "normal"),
+            text_color=theme.TEXT_MUTED
+        )
+        self.lbl_rules_hint.pack(anchor="w", padx=20, pady=(0, 8))
 
-    def _ambil_folder(self):
-        p = Path(self.folder.get().strip())
-        if not p.is_dir():
-            messagebox.showwarning(APP_NAME, self.tr("warn_invalid"))
-            return None
-        if folder_berbahaya(p):
-            messagebox.showwarning(APP_NAME, self.tr("warn_sensitive"))
-            return None
-        return p
+        self.rules_container = ctk.CTkFrame(card, fg_color="transparent")
+        self.rules_container.pack(fill="x", padx=16, pady=(0, 8))
+        self._render_custom_rules()
 
-    def _opts(self):
-        return {
-            "type": self.v_type.get(), "sub": self.v_sub.get(), "dup": self.v_dup.get(),
-            "clean": self.v_clean.get(), "date": self.date_key, "src": self.src_key,
-            "lang": self.lang, "dupdir": DUP_NAMES[self.lang],
-        }
+    def _render_custom_rules(self):
+        for w in self.rules_container.winfo_children():
+            w.destroy()
 
-    # ----- Antrian & thread -----
-    def _poll(self):
-        try:
-            while True:
-                m = self.q.get_nowait()
-                if m[0] == "log":
-                    self.tulis(m[1])
-                elif m[0] == "clear":
-                    self.bersihkan()
-                elif m[0] == "progress":
-                    self.progress.set(m[1])
-                elif m[0] == "status":
-                    self.status.configure(text=m[1])
-                elif m[0] == "info":
-                    messagebox.showinfo(APP_NAME, m[1])
-                elif m[0] == "confirm":
-                    self.pending = m[1]
-                elif m[0] == "done":
-                    self._selesai()
-        except queue.Empty:
-            pass
-        self.after(60, self._poll)
-
-    def _mulai(self, fn, *args):
-        if self.sibuk:
+        if not self.custom_rules:
+            lbl = ctk.CTkLabel(
+                self.rules_container,
+                text="Belum ada aturan kata kunci khusus.",
+                font=theme.get_font(11, "normal"),
+                text_color=theme.TEXT_MUTED
+            )
+            lbl.pack(anchor="w", padx=4, pady=2)
             return
-        self.sibuk = True
-        for b in self.btns:
-            b.configure(state="disabled")
-        self.progress.set(0)
-        threading.Thread(target=self._aman, args=(fn,) + args, daemon=True).start()
 
-    def _aman(self, fn, *args):
+        for idx, rule in enumerate(self.custom_rules):
+            r_box = ctk.CTkFrame(
+                self.rules_container,
+                fg_color="#1D1D22",
+                corner_radius=10,
+                border_width=1,
+                border_color="#2A2A32"
+            )
+            r_box.pack(fill="x", pady=3)
+
+            lbl_kw = ctk.CTkLabel(
+                r_box,
+                text=f"🔍 Kata kunci: '{rule['keyword']}'",
+                font=theme.get_font(11, "bold"),
+                text_color=theme.ACCENT_LIME
+            )
+            lbl_kw.pack(side="left", padx=12, pady=6)
+
+            lbl_target = ctk.CTkLabel(
+                r_box,
+                text=f"➔ Folder tujuan: {rule['folder']}",
+                font=theme.get_font(11, "normal"),
+                text_color=theme.TEXT_PRIMARY
+            )
+            lbl_target.pack(side="left", padx=10, pady=6)
+
+            btn_del = ctk.CTkButton(
+                r_box,
+                text="✕",
+                width=20,
+                height=20,
+                corner_radius=10,
+                fg_color="transparent",
+                hover_color="#3A1D1D",
+                text_color=theme.DANGER,
+                font=ctk.CTkFont(size=10, weight="bold"),
+                command=lambda i=idx: self._remove_rule(i)
+            )
+            btn_del.pack(side="right", padx=8, pady=6)
+
+    def _dialog_add_rule(self):
+        subfolders = self._get_target_subfolders()
+        dlg = CustomRuleDialog(self, subfolders=subfolders)
+        self.wait_window(dlg)
+        if dlg.result:
+            self.custom_rules.append(dlg.result)
+            self._render_custom_rules()
+            self._save_settings()
+
+    def _remove_rule(self, idx):
+        if 0 <= idx < len(self.custom_rules):
+            self.custom_rules.pop(idx)
+            self._render_custom_rules()
+            self._save_settings()
+
+    def _build_options_card(self, parent):
+        card = ctk.CTkFrame(
+            parent,
+            fg_color=theme.CARD_BG,
+            corner_radius=18,
+            border_width=1,
+            border_color=theme.BORDER_COLOR
+        )
+        card.pack(fill="x", pady=(0, 12), ipady=6)
+
+        self.lbl_opts_title = ctk.CTkLabel(
+            card,
+            text=self.t("options_title"),
+            font=theme.get_font(11, "bold"),
+            text_color=theme.TEXT_MUTED
+        )
+        self.lbl_opts_title.pack(anchor="w", padx=20, pady=(12, 10))
+
+        opts_grid = ctk.CTkFrame(card, fg_color="transparent")
+        opts_grid.pack(fill="x", padx=16, pady=(0, 10))
+        opts_grid.grid_columnconfigure((0, 1), weight=1)
+
+        self.chk_list = []
+        switches = [
+            ("opt_type", self.sw_type, 0, 0),
+            ("opt_exif", self.sw_exif, 0, 1),
+            ("opt_dup", self.sw_dup, 1, 0),
+            ("opt_recycle", self.sw_recycle, 1, 1),
+            ("opt_sub", self.sw_sub, 2, 0),
+            ("opt_clean", self.sw_clean, 2, 1),
+            ("opt_junk", self.sw_junk, 3, 0),
+            ("opt_context", self.sw_context, 3, 1),
+        ]
+
+        for key, var, r, c in switches:
+            chk = ctk.CTkCheckBox(
+                opts_grid,
+                text=self.t(key),
+                variable=var,
+                font=theme.get_font(12, "normal"),
+                text_color=theme.TEXT_PRIMARY,
+                fg_color=theme.ACCENT_LIME,
+                checkmark_color="#121214",
+                hover_color=theme.ACCENT_LIME_HOVER,
+                border_color=theme.BORDER_LIGHT,
+                corner_radius=6,
+                command=self._on_option_changed
+            )
+            chk.grid(row=r, column=c, padx=10, pady=6, sticky="w")
+            self.chk_list.append((key, chk))
+
+        date_frame = ctk.CTkFrame(card, fg_color="transparent")
+        date_frame.pack(fill="x", padx=26, pady=(6, 12))
+
+        self.lbl_date = ctk.CTkLabel(
+            date_frame,
+            text=f"{self.t('opt_date')}:",
+            font=theme.get_font(12, "bold"),
+            text_color=theme.TEXT_SECONDARY
+        )
+        self.lbl_date.pack(side="left", padx=(0, 10))
+
+        date_choices = ["none", "year", "month"]
+        for opt in date_choices:
+            rb = ctk.CTkRadioButton(
+                date_frame,
+                text=opt.capitalize(),
+                variable=self.date_mode,
+                value=opt,
+                font=theme.get_font(12, "normal"),
+                text_color=theme.TEXT_PRIMARY,
+                fg_color=theme.ACCENT_LIME,
+                border_color=theme.BORDER_LIGHT
+            )
+            rb.pack(side="left", padx=10)
+
+    def _build_actions_and_log(self, parent):
+        actions_box = ctk.CTkFrame(parent, fg_color="transparent")
+        actions_box.pack(fill="x", pady=(0, 12))
+
+        self.btn_preview = ctk.CTkButton(
+            actions_box,
+            text=self.t("btn_preview"),
+            font=theme.get_font(13, "bold"),
+            height=46,
+            corner_radius=12,
+            fg_color=theme.CARD_BG,
+            border_width=1,
+            border_color=theme.BORDER_LIGHT,
+            hover_color=theme.CARD_HOVER,
+            text_color=theme.TEXT_PRIMARY,
+            command=self._on_click_preview
+        )
+        self.btn_preview.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        self.btn_run = ctk.CTkButton(
+            actions_box,
+            text=self.t("btn_run"),
+            font=theme.get_font(14, "bold"),
+            height=46,
+            corner_radius=12,
+            fg_color=theme.ACCENT_LIME,
+            hover_color=theme.ACCENT_LIME_HOVER,
+            text_color="#121214",
+            command=self._on_click_run
+        )
+        self.btn_run.pack(side="left", fill="x", expand=True, padx=4)
+
+        self.btn_undo = ctk.CTkButton(
+            actions_box,
+            text=self.t("btn_undo"),
+            font=theme.get_font(13, "bold"),
+            height=46,
+            corner_radius=12,
+            fg_color=theme.CARD_BG,
+            border_width=1,
+            border_color=theme.BORDER_LIGHT,
+            hover_color=theme.CARD_HOVER,
+            text_color=theme.TEXT_SECONDARY,
+            command=self._on_click_undo
+        )
+        self.btn_undo.pack(side="right", padx=(6, 0))
+
+        self.log_box = ctk.CTkTextbox(
+            parent,
+            height=160,
+            corner_radius=16,
+            fg_color=theme.CARD_BG,
+            border_width=1,
+            border_color=theme.BORDER_COLOR,
+            text_color=theme.TEXT_PRIMARY,
+            font=ctk.CTkFont(family="Consolas", size=12)
+        )
+        self.log_box.pack(fill="both", expand=True, pady=(0, 8))
+        self._log_append("✦ Rapihin v2.0 Siap - Pilih folder untuk melihat pratinjau instan.")
+
+    # --- Quick Inspect Initial Folder State ---
+
+    def _quick_inspect_folder(self, folder_path):
+        if not folder_path.exists() or not folder_path.is_dir():
+            return
+
+        for w in self.chips_frame.winfo_children():
+            w.destroy()
+
+        cat_counts = defaultdict(int)
+        cat_sizes = defaultdict(int)
+        ext_counter = Counter()
+        total_files = 0
+
         try:
-            fn(*args)
+            for item in folder_path.iterdir():
+                if item.is_file() and item.name not in engine.SKIP_FILES and not item.name.startswith("."):
+                    total_files += 1
+                    ext = item.suffix.lower().lstrip(".")
+                    cat = engine.get_category(ext)
+                    cat_counts[cat] += 1
+                    try:
+                        sz = item.stat().st_size
+                        cat_sizes[cat] += sz
+                    except OSError:
+                        pass
+                    if ext:
+                        ext_counter[ext] += 1
         except Exception as e:
-            self.q.put(("log", self.tr("err", e=e)))
-        finally:
-            self.q.put(("done",))
-
-    def _selesai(self):
-        self.sibuk = False
-        for b in self.btns:
-            b.configure(state="normal")
-        if self.pending:
-            p, self.pending = self.pending, None
-            root, moves, dups, o = p
-            teks = self.tr("confirm_move", n=len(moves))
-            if dups:
-                teks += self.tr("confirm_dups", d=len(dups), dir=o["dupdir"])
-            if messagebox.askyesno(APP_NAME, teks + self.tr("confirm_tail")):
-                self._mulai(self._eksekusi, root, moves, dups, o)
-
-    def _klik(self, mode):
-        root = self._ambil_folder()
-        if not root:
+            self._log_append(f"Gagal membaca folder: {e}")
             return
-        self.simpan_settings()
-        if mode == "undo":
-            if not (root / UNDO_FILE).exists():
-                messagebox.showinfo(APP_NAME, self.tr("no_undo"))
-                return
-            self._mulai(self._undo, root)
-        elif mode == "preview":
-            self._mulai(self._preview, root, self._opts())
+
+        self.card_total.update_data(value=str(total_files))
+
+        if total_files == 0:
+            self.lbl_inspect_status.configure(text="Folder Kosong", text_color=theme.TEXT_MUTED)
+            self.card_neat.update_data(value="100%", subtitle=self.t("neat_perfect"), text_color=theme.SUCCESS)
+            lbl = ctk.CTkLabel(
+                self.chips_frame,
+                text="Tidak ada file yang perlu dirapikan di dalam folder ini.",
+                font=theme.get_font(12, "normal"),
+                text_color=theme.TEXT_MUTED
+            )
+            lbl.pack(anchor="w", padx=4, pady=4)
+            return
+
+        types_count = len(cat_counts)
+        if types_count >= 5:
+            tidiness_score = max(8, 30 - types_count * 3)
+            sub_text = self.t("neat_messy")
+            color = theme.DANGER
+        elif types_count >= 2:
+            tidiness_score = max(20, 50 - types_count * 6)
+            sub_text = self.t("neat_messy")
+            color = theme.WARNING
         else:
-            self._mulai(self._cek, root, self._opts())
+            tidiness_score = 65
+            sub_text = "Sebagian rapi"
+            color = theme.ACCENT_LIME
 
-    # ----- Kerja berat (jalan di thread) -----
-    def _rencana(self, root, o):
-        put = self.q.put
-        put(("log", self.tr("scan")))
-        files = scan(root, o["sub"])
-        put(("log", self.tr("found", n=len(files))))
+        self.card_neat.update_data(
+            value=f"{tidiness_score}%",
+            subtitle=sub_text,
+            text_color=color
+        )
 
-        dups = []
-        if o["dup"]:
-            per_size = defaultdict(list)
-            for f in files:
-                try:
-                    s = f.stat().st_size
-                except OSError:
-                    continue
-                if s > 0:
-                    per_size[s].append(f)
-            kandidat = [f for g in per_size.values() if len(g) > 1 for f in g]
-            if kandidat:
-                put(("log", self.tr("check_dup", n=len(kandidat))))
-            per_hash = defaultdict(list)
-            for i, f in enumerate(kandidat, 1):
-                try:
-                    per_hash[(f.stat().st_size, hash_file(f))].append(f)
-                except OSError:
-                    pass
-                put(("progress", i / len(kandidat)))
-            for g in per_hash.values():
-                if len(g) > 1:
-                    g.sort(key=lambda p: (p.stat().st_mtime, len(str(p))))
-                    dups.extend(g[1:])  # yang paling lama dipertahankan
-            ds = set(dups)
-            files = [f for f in files if f not in ds]
+        self.lbl_inspect_status.configure(
+            text=self.t("inspect_messy").format(count=types_count),
+            text_color=theme.WARNING
+        )
+
+        row_frame = ctk.CTkFrame(self.chips_frame, fg_color="transparent")
+        row_frame.pack(fill="x", pady=2)
+
+        for cat, count in sorted(cat_counts.items(), key=lambda x: x[1], reverse=True):
+            cat_name = engine.CAT_NAMES[self.lang].get(cat, cat.capitalize())
+            icon = CAT_ICONS.get(cat, "📁")
+            size_str = engine.fmt_size(cat_sizes[cat])
+            chip = theme.CategoryChip(row_frame, icon=icon, name=cat_name, count=count, size_str=size_str)
+            chip.pack(side="left", padx=4, pady=4)
+
+        top_exts = ", ".join([f".{ext} ({cnt})" for ext, cnt in ext_counter.most_common(4)])
+        self._log_append(f"Folder: {folder_path.name} | Total: {total_files} file | Format: {top_exts}")
+
+    # --- Handlers ---
+
+    def _log_append(self, text, clear=False):
+        if clear:
+            self.log_box.delete("1.0", "end")
+        self.log_box.insert("end", text + "\n")
+        self.log_box.see("end")
+
+    def _browse_folder(self):
+        sel = filedialog.askdirectory(initialdir=self.folder_var.get() or os.path.expanduser("~"))
+        if sel:
+            p = Path(sel)
+            self.folder_var.set(str(p))
+            self._quick_inspect_folder(p)
+
+    def _on_dnd_drop(self, event):
+        val = event.data.strip("{}")
+        if os.path.isdir(val):
+            p = Path(val)
+            self.folder_var.set(str(p))
+            self._quick_inspect_folder(p)
+
+    def _toggle_language(self):
+        self.lang = "en" if self.lang == "id" else "id"
+        self.btn_lang.configure(text=self.lang.upper())
+        self.lbl_target_title.configure(text=self.t("folder_card"))
+        self.entry_folder.configure(placeholder_text=self.t("placeholder"))
+        self.btn_browse.configure(text=self.t("btn_browse"))
+        self.lbl_inspect_title.configure(text=self.t("quick_inspect_title"))
+        self.lbl_stabilo_title.configure(text=self.t("stabilo_title"))
+        self.lbl_stabilo_hint.configure(text=self.t("stabilo_hint"))
+        self.lbl_rules_title.configure(text=self.t("custom_rules_title"))
+        self.lbl_rules_hint.configure(text=self.t("custom_rules_hint"))
+        self.lbl_opts_title.configure(text=self.t("options_title"))
+        self.lbl_date.configure(text=f"{self.t('opt_date')}:")
+        self.btn_preview.configure(text=self.t("btn_preview"))
+        self.btn_run.configure(text=self.t("btn_run"))
+        self.btn_undo.configure(text=self.t("btn_undo"))
+        self.lbl_status.configure(text=self.t("status_ready"))
+
+        for key, chk in self.chk_list:
+            chk.configure(text=self.t(key))
+
+        if self.folder_var.get() and Path(self.folder_var.get()).is_dir():
+            self._quick_inspect_folder(Path(self.folder_var.get()))
+
+    def _on_option_changed(self):
+        if self.sw_context.get():
+            ok, msg = engine.set_context_menu(enable=True)
+            if not ok:
+                messagebox.showwarning("Context Menu", msg)
+                self.sw_context.set(False)
+        else:
+            engine.set_context_menu(enable=False)
+
+    def _check_for_updates_background(self):
+        def worker():
+            has_update, latest_ver, url, notes = engine.check_github_update()
+            if has_update:
+                self.update_info = {"ver": latest_ver, "url": url}
+                self.after(0, self._show_update_banner, latest_ver)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_update_banner(self, ver):
+        self.lbl_update.configure(text=self.t("update_available").format(ver=ver))
+        self.update_card.pack(fill="x", pady=(0, 12), before=self.entry_folder.master.master)
+
+    def _open_update_link(self):
+        if self.update_info and self.update_info.get("url"):
+            webbrowser.open(self.update_info["url"])
+
+    # --- Scanning & Preview Logic ---
+
+    def _on_click_preview(self):
+        folder = Path(self.folder_var.get().strip())
+        if not folder.exists() or not folder.is_dir():
+            messagebox.showwarning("Error", "Pilih folder yang valid terlebih dahulu!")
+            return
+        if engine.is_sensitive_folder(folder):
+            messagebox.showerror("Error", "Folder ini adalah folder sistem sensitif. Pilih folder lain demi keamanan.")
+            return
+
+        self._set_ui_busy(True)
+        self.lbl_status.configure(text=self.t("status_scanning"))
+        self.progress_bar.set_progress(0.2)
+        self.lbl_percent.configure(text="20%")
+        self._log_append(f"\n[MEMINDAI LENGKAP] {folder} ...", clear=True)
+
+        def worker():
+            plan = self._calculate_plan(folder)
+            self.after(0, lambda: self._apply_preview_results(plan))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _calculate_plan(self, root_dir):
+        recursive = self.sw_sub.get()
+        all_files = []
+        stabilo_set = {s.lower() for s in self.stabilo_folders}
+
+        if not recursive:
+            for item in root_dir.iterdir():
+                if item.is_file() and item.name not in engine.SKIP_FILES and not item.name.startswith("."):
+                    all_files.append(item)
+        else:
+            for dp, dns, fns in os.walk(root_dir):
+                dns[:] = [
+                    d for d in dns
+                    if not d.startswith(".")
+                    and d not in engine.SKIP_DIRS
+                    and d.lower() not in stabilo_set
+                ]
+                for fn in fns:
+                    if fn not in engine.SKIP_FILES and not fn.startswith("."):
+                        all_files.append(Path(dp) / fn)
+
+        duplicates = {}
+        saved_bytes = 0
+        if self.sw_dup.get() and all_files:
+            duplicates, saved_bytes = engine.find_duplicates_tiered(all_files)
+
+        junk_report = {"zero_byte": [], "broken_lnk": [], "old_installers": []}
+        if self.sw_junk.get() and all_files:
+            junk_report = engine.detect_junk_and_old_installers(all_files)
 
         moves = []
-        for f in files:
-            try:
-                t = tujuan_dir(f, root, o)
-            except OSError:
+        dup_moves = []
+        custom_routed_moves = []
+        date_mode = self.date_mode.get()
+        use_exif = self.sw_exif.get()
+        use_type = self.sw_type.get()
+
+        dup_folder = root_dir / engine.CAT_NAMES[self.lang].get("other", "_Duplikat")
+        dup_paths_set = set()
+        for original, dup_list in duplicates.items():
+            for d in dup_list:
+                dup_paths_set.add(d)
+                dup_moves.append((d, dup_folder / d.name))
+
+        for f in all_files:
+            if f in dup_paths_set:
                 continue
-            if f.parent != t:
-                moves.append((f, t))
-        return moves, dups
 
-    def _preview(self, root, o):
-        self.q.put(("clear",))
-        moves, dups = self._rencana(root, o)
-        put = self.q.put
-        put(("log", self.tr("preview_head", m=len(moves), d=len(dups))))
-        if not moves and not dups:
-            put(("log", self.tr("nothing")))
+            matched_folder = engine.match_custom_rules(f, self.custom_rules)
+            if matched_folder:
+                target_dir = root_dir / matched_folder
+                target_path = target_dir / f.name
+                if target_path != f:
+                    moves.append((f, target_path))
+                    custom_routed_moves.append((f, target_path))
+                continue
+
+            target_dir = root_dir
+            cat = engine.get_category(f.suffix)
+
+            if use_type:
+                target_dir = target_dir / engine.CAT_NAMES[self.lang].get(cat, cat.capitalize())
+
+            dt = None
+            if cat == "images" and use_exif:
+                dt = engine.get_photo_date(f)
+            elif cat == "audio" and use_exif:
+                artist, album = engine.get_audio_info(f)
+                if artist:
+                    target_dir = target_dir / artist
+
+            if dt is None:
+                st = f.stat()
+                dt = datetime.fromtimestamp(st.st_mtime)
+
+            if date_mode == "year":
+                target_dir = target_dir / f"{dt:%Y}"
+            elif date_mode == "month":
+                target_dir = target_dir / f"{dt:%Y-%m}"
+
+            target_path = target_dir / f.name
+            if target_path != f:
+                moves.append((f, target_path))
+
+        return {
+            "root": root_dir,
+            "all_files_count": len(all_files),
+            "moves": moves,
+            "custom_routed": custom_routed_moves,
+            "duplicates": duplicates,
+            "dup_moves": dup_moves,
+            "saved_bytes": saved_bytes,
+            "junk": junk_report
+        }
+
+    def _apply_preview_results(self, plan):
+        self._set_ui_busy(False)
+        self.current_preview_plan = plan
+        self.progress_bar.set_progress(1.0)
+        self.lbl_percent.configure(text="100%")
+        self.lbl_status.configure(text="Pratinjau siap ditinjau.")
+
+        self.card_total.update_data(value=str(plan["all_files_count"]))
+        self.card_savings.update_data(
+            value=engine.fmt_size(plan["saved_bytes"]),
+            subtitle=f"{len(plan['dup_moves'])} duplikat"
+        )
+
+        self._log_append("=" * 55)
+        self._log_append(f"TOTAL FILE DITEMUKAN   : {plan['all_files_count']}")
+        self._log_append(f"AKAN DIRAPIKAN         : {len(plan['moves'])} file")
+        if plan["custom_routed"]:
+            self._log_append(f"ATURAN KATA KUNCI (SAFE): {len(plan['custom_routed'])} file masuk folder khusus")
+        self._log_append(f"DUPLIKAT DIHEMAT       : {len(plan['dup_moves'])} file ({engine.fmt_size(plan['saved_bytes'])})")
+
+        old_inst = plan["junk"]["old_installers"]
+        if old_inst:
+            self._log_append(f"INSTALLER LAMA DITEMUKAN: {len(old_inst)} file")
+
+        self._log_append("=" * 55)
+        for src, dst in plan["custom_routed"][:5]:
+            self._log_append(f"  ⭐ [KHUSUS] {src.name}  =>  {dst.parent.relative_to(plan['root'])}\\")
+
+        for src, dst in plan["moves"][:6]:
+            if (src, dst) not in plan["custom_routed"]:
+                self._log_append(f"  → {src.name}  =>  {dst.parent.relative_to(plan['root'])}\\")
+        if len(plan["moves"]) > 10:
+            self._log_append(f"  ... dan {len(plan['moves']) - 10} file lainnya.")
+
+        self._log_append("\nSiap? Klik 'Rapihin Sekarang' untuk menata file!")
+
+    # --- Execution & Undo ---
+
+    def _on_click_run(self):
+        if not self.current_preview_plan or not self.current_preview_plan.get("root"):
+            self._on_click_preview()
             return
-        hitung = sorted(Counter(str(t.relative_to(root)) for _, t in moves).items())
-        for nama, n in hitung[:40]:
-            put(("log", f"  {nama:<32} {n}"))
-        if len(hitung) > 40:
-            put(("log", self.tr("more_folders", n=len(hitung) - 40)))
-        if dups:
-            total = sum(f.stat().st_size for f in dups if f.exists())
-            put(("log", self.tr("dup_line", n=len(dups), size=fmt_size(total), dir=o["dupdir"])))
-            for f in dups[:8]:
-                put(("log", f"  - {f.relative_to(root)}"))
-            if len(dups) > 8:
-                put(("log", self.tr("more_items", n=len(dups) - 8)))
-        put(("log", self.tr("preview_hint")))
 
-    def _cek(self, root, o):
-        self.q.put(("clear",))
-        moves, dups = self._rencana(root, o)
-        if not moves and not dups:
-            self.q.put(("info", self.tr("nothing_info")))
+        plan = self.current_preview_plan
+        total_actions = len(plan["moves"]) + len(plan["dup_moves"])
+        if total_actions == 0:
+            messagebox.showinfo("Rapihin", "Semua file di folder ini sudah rapi!")
             return
-        self.q.put(("confirm", (root, moves, dups, o)))
 
-    def _eksekusi(self, root, moves, dups, o):
-        put = self.q.put
-        put(("clear",))
-        put(("log", self.tr("starting")))
-        items = [(f, t, False) for f, t in moves] + [(f, root / o["dupdir"], True) for f in dups]
-        riwayat, gagal, asal_dirs = [], 0, set()
-        n_move = n_dup = ukuran_move = ukuran_dup = 0
-        per_kat = Counter()
-        for i, (f, t, is_dup) in enumerate(items, 1):
-            try:
-                ukuran = f.stat().st_size
-                t.mkdir(parents=True, exist_ok=True)
-                dst = target_unik(t / f.name)
-                shutil.move(str(f), str(dst))
-                riwayat.append([str(f), str(dst)])
-                asal_dirs.add(f.parent)
-                if is_dup:
-                    n_dup += 1
-                    ukuran_dup += ukuran
-                else:
-                    n_move += 1
-                    ukuran_move += ukuran
-                    per_kat[cari_kategori(f.suffix.lstrip(".").lower())] += 1
-            except Exception as e:
-                gagal += 1
-                put(("log", self.tr("fail", name=f.name, err=e)))
-            if i % 10 == 0 or i == len(items):
-                put(("progress", i / len(items)))
-        kosong = bersihin_kosong(asal_dirs, root) if o["clean"] else 0
-        (root / UNDO_FILE).write_text(json.dumps(riwayat), encoding="utf-8")
+        confirm = messagebox.askyesno(
+            "Konfirmasi",
+            f"Rapihkan {len(plan['moves'])} file dan tangani {len(plan['dup_moves'])} duplikat?\n"
+            f"(Bisa di-undo kapan saja lewat tombol Undo)"
+        )
+        if not confirm:
+            return
 
-        put(("log", self.tr("done_line", n=len(riwayat), g=gagal)))
-        put(("log", self.tr("sum_title")))
-        put(("log", self.tr("sum_total", n=n_move, size=fmt_size(ukuran_move))))
-        if o["type"]:
-            for key, n in per_kat.most_common():
-                put(("log", f"    {CAT_NAMES[o['lang']][key]:<12}: {n}"))
-        if n_dup:
-            put(("log", self.tr("sum_dups", n=n_dup, size=fmt_size(ukuran_dup))))
-        if kosong:
-            put(("log", self.tr("clean_n", n=kosong)))
-        put(("log", "\n" + self.tr("undo_hint")))
-        status = self.tr("status_done", n=n_move, size=fmt_size(ukuran_move))
-        if n_dup:
-            status += self.tr("status_dups", d=n_dup, size=fmt_size(ukuran_dup))
-        put(("status", status))
+        self._set_ui_busy(True)
+        self.lbl_status.configure(text=self.t("status_running"))
+        self.progress_bar.set_progress(0.1)
 
-    def _undo(self, root):
-        put = self.q.put
-        put(("clear",))
-        put(("log", self.tr("undoing")))
-        berkas = root / UNDO_FILE
-        riwayat = json.loads(berkas.read_text(encoding="utf-8"))
-        ok = 0
-        for i, (asal, kini) in enumerate(reversed(riwayat), 1):
-            try:
-                kini_p = Path(kini)
-                if kini_p.exists():
-                    a = target_unik(Path(asal))
-                    a.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.move(str(kini_p), str(a))
-                    ok += 1
-            except Exception as e:
-                put(("log", self.tr("fail", name=kini, err=e)))
-            if i % 10 == 0 or i == len(riwayat):
-                put(("progress", i / len(riwayat)))
-        bersihin_kosong({Path(k).parent for _, k in riwayat}, root)
-        berkas.unlink()
-        put(("log", self.tr("undone", n=ok)))
-        put(("status", self.tr("status_undo", n=ok)))
+        def worker():
+            executed_moves = []
+            root = plan["root"]
+            use_recycle = self.sw_recycle.get()
+
+            for dup_src, dup_target in plan["dup_moves"]:
+                if use_recycle:
+                    ok, _ = engine.safe_recycle(dup_src)
+                    if ok:
+                        continue
+                try:
+                    dup_target.parent.mkdir(parents=True, exist_ok=True)
+                    final_dst = engine.get_unique_target(dup_target)
+                    shutil.move(str(dup_src), str(final_dst))
+                    executed_moves.append({"src": str(dup_src), "dst": str(final_dst)})
+                except Exception:
+                    pass
+
+            moved_count = 0
+            for src, dst in plan["moves"]:
+                try:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    final_dst = engine.get_unique_target(dst)
+                    shutil.move(str(src), str(final_dst))
+                    executed_moves.append({"src": str(src), "dst": str(final_dst)})
+                    moved_count += 1
+                except Exception:
+                    pass
+
+            if executed_moves:
+                undo_path = root / engine.UNDO_FILE
+                try:
+                    with open(undo_path, "w", encoding="utf-8") as f:
+                        json.dump(executed_moves, f, indent=2)
+                except Exception:
+                    pass
+
+            cleaned_dirs = 0
+            if self.sw_clean.get():
+                stabilo_set = {s.lower() for s in self.stabilo_folders}
+                for dp, dns, fns in os.walk(root, topdown=False):
+                    p = Path(dp)
+                    if p != root and not any(p.iterdir()) and p.name.lower() not in stabilo_set:
+                        try:
+                            p.rmdir()
+                            cleaned_dirs += 1
+                        except OSError:
+                            pass
+
+            self.after(0, lambda: self._on_run_complete(moved_count, len(plan["dup_moves"]), cleaned_dirs))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_run_complete(self, moved, dups, cleaned):
+        self._set_ui_busy(False)
+        self.progress_bar.set_progress(1.0)
+        self.lbl_percent.configure(text="100%")
+        self.card_neat.update_data(value="100%", subtitle="Selesai dirapikan!", text_color=theme.SUCCESS)
+        self.lbl_status.configure(text="✓ Berhasil dirapikan!")
+
+        self._log_append("\n[SELESAI EKSEKUSI]")
+        self._log_append(f"✓ {moved} file berhasil ditata rapi.")
+        if dups > 0:
+            self._log_append(f"✓ {dups} duplikat dipindahkan.")
+        if cleaned > 0:
+            self._log_append(f"✓ {cleaned} folder kosong dibersihkan.")
+        self._log_append("Kapan saja merasa kurang cocok, klik tombol Undo.")
+
+        folder = Path(self.folder_var.get().strip())
+        if folder.exists():
+            self._quick_inspect_folder(folder)
+
+        messagebox.showinfo("Sukses", f"Berhasil merapikan {moved} file!")
+
+    def _on_click_undo(self):
+        folder = Path(self.folder_var.get().strip())
+        undo_file = folder / engine.UNDO_FILE
+        if not undo_file.exists():
+            messagebox.showinfo("Undo", "Tidak ditemukan riwayat rapihin di folder ini.")
+            return
+
+        confirm = messagebox.askyesno("Undo", "Kembalikan semua file ke lokasi asalnya?")
+        if not confirm:
+            return
+
+        try:
+            with open(undo_file, "r", encoding="utf-8") as f:
+                records = json.load(f)
+
+            restored = 0
+            for item in reversed(records):
+                src = Path(item["src"])
+                dst = Path(item["dst"])
+                if dst.exists():
+                    src.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(dst), str(src))
+                    restored += 1
+
+            undo_file.unlink(missing_ok=True)
+            self._log_append(f"\n↩ Undo berhasil: {restored} file dikembalikan ke tempat semula.")
+            messagebox.showinfo("Undo", f"{restored} file berhasil dikembalikan.")
+            self.lbl_status.configure(text="Riwayat telah di-undo.")
+            self._quick_inspect_folder(folder)
+        except Exception as e:
+            messagebox.showerror("Error", f"Gagal melakukan undo: {e}")
+
+    def _set_ui_busy(self, busy):
+        self.worker_busy = busy
+        state = "disabled" if busy else "normal"
+        self.btn_preview.configure(state=state)
+        self.btn_run.configure(state=state)
+        self.btn_undo.configure(state=state)
+
+
+def main():
+    app = RapihinApp()
+    app.mainloop()
 
 
 if __name__ == "__main__":
-    App().mainloop()
+    main()
